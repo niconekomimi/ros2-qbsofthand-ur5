@@ -1,0 +1,21 @@
+<?xml version="1.0"?>
+<package format="3">
+  <name>yolo_center_detector</name>
+  <version>0.0.1</version>
+  <description>ROS2 YOLO detector returning bbox center pixels filtered by target list.</description>
+
+  <maintainer email="673269043@qq.com">Evil_Eyes</maintainer>
+  <license>Apache-2.0</license>
+
+  <buildtool_depend>ament_python</buildtool_depend>
+
+  <depend>rclpy</depend>
+  <depend>sensor_msgs</depend>
+  <depend>geometry_msgs</depend>
+  <depend>vision_msgs</depend>
+  <depend>cv_bridge</depend>
+
+  <export>
+    <build_type>ament_python</build_type>
+  </export>
+</package>

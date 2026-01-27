@@ -1,0 +1,13 @@
+# Python 依赖包
+# 安装方式: pip3 install -r requirements.txt -i https://mirrors.aliyun.com/pypi/simple/
+
+# YOLO 物体检测
+ultralytics>=8.0.0
+
+# 图像处理
+opencv-python>=4.5.0,<4.9
+numpy>=1.21.0,<2.0
+
+# ROS2 Python 库（通常已由 ROS2 安装提供，此处仅作记录）
+# ros-humble-cv-bridge
+# ros-humble-vision-msgs
