@@ -47,13 +47,13 @@ ros2 topic echo /detections
 
 ## 常用参数
 
-| 参数           |  默认值          |  说明                                     |
-|---------------|-----------------|-------------------------------------------|
-| `image_topic` | /image          | 输入图像话题（OAK-D 用 `/color/video/image`）|
-| `depth_topic` | /stereo/depth   | 深度图话题（OAK-D 深度图）                   |
-| `target_list` | ["person"]      | 要检测的物体列表                             |
-| `conf`        | 0.25            | 置信度阈值（0-1）                           |
-| `device`      | cuda:0          | 推理设备（cuda:0 或 cpu）                   |
+| 参数 | 默认值 | 说明 |
+|-----------|-----------|-----------|
+| `image_topic` | /image | 输入图像话题（OAK-D 用 `/color/video/image`）|
+| `depth_topic` | /stereo/depth | 深度图话题（OAK-D 深度图） |
+| `target_list` | ["person"] | 要检测的物体列表 |
+| `conf` | 0.25 | 置信度阈值（0-1） |
+| `device` | cuda:0 | 推理设备（cuda:0 或 cpu） |
 
 **支持检测的物体（COCO 80类）：**
 ```
