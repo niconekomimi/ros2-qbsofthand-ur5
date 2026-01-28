@@ -47,11 +47,11 @@ class GraspControlNode(Node):
         # 加载配置
         self.config = self._load_config()
 
-        # 初始化子模块
+        # 初始化子模块（传递回调组）
         self.transformer = CoordinateTransformer(self, self.config)
-        self.arm = ArmController(self, self.config)
-        self.hand = HandController(self, self.config)
-        self.moveit = MoveItArmController(self, self.config)
+        self.arm = ArmController(self, self.config, self.callback_group)
+        self.hand = HandController(self, self.config, self.callback_group)
+        self.moveit = MoveItArmController(self, self.config, self.callback_group)
 
         # 状态机
         self.state = GraspState.IDLE
@@ -152,6 +152,8 @@ class GraspControlNode(Node):
 
     def _trigger_callback(self, request, response):
         """触发抓取服务回调"""
+        self.get_logger().info(f'[DEBUG] _trigger_callback 被调用，当前状态: {self.state.name}')
+
         if self.state != GraspState.IDLE:
             response.success = False
             response.message = f'当前状态: {self.state.name}，无法触发'
@@ -171,6 +173,9 @@ class GraspControlNode(Node):
 
     def _state_machine_tick(self):
         """状态机主循环"""
+        # 调试：记录定时器触发
+        self.get_logger().info(f'[DEBUG] tick: state={self.state.name}, executing={self.state_executing}')
+
         if self.state == GraspState.IDLE:
             pass  # 等待触发
 
@@ -219,10 +224,13 @@ class GraspControlNode(Node):
 
         # 先张开灵巧手
         self.hand.open_hand()
+        self.get_logger().info('[DEBUG] 灵巧手张开完成，等待 0.5 秒...')
         time.sleep(0.5)
 
         # 移动到 Home
+        self.get_logger().info('[DEBUG] 开始调用 move_to_joints_sync...')
         success = self.arm.move_to_joints_sync(self.home_joints)
+        self.get_logger().info(f'[DEBUG] move_to_joints_sync 返回: {success}')
 
         if success:
             self.detection_start_time = time.time()
@@ -232,7 +240,16 @@ class GraspControlNode(Node):
 
     def _handle_detecting(self):
         """处理物体检测"""
+        # 调试日志
+        self.get_logger().info(
+            f'[DEBUG] _handle_detecting: latest_detection={self.latest_detection is not None}'
+        )
+
         if self.latest_detection is not None:
+            self.get_logger().info(
+                f'检测到物体，准备计算坐标: 像素({self.latest_detection.position.x:.1f}, '
+                f'{self.latest_detection.position.y:.1f}), 深度={self.latest_detection.position.z:.3f}m'
+            )
             self._transition_to(GraspState.CALCULATING)
             return
 

@@ -1,5 +1,6 @@
 """灵巧手控制模块：qbSoftHand 控制"""
 
+import time
 from typing import Optional
 
 import rclpy
@@ -10,10 +11,11 @@ from qbsofthand_control.srv import SetClosure
 class HandController:
     """qbSoftHand 灵巧手控制器"""
 
-    def __init__(self, node: Node, config: dict):
+    def __init__(self, node: Node, config: dict, callback_group=None):
         self.node = node
         self.config = config
         self.logger = node.get_logger()
+        self.callback_group = callback_group
 
         # 配置参数
         hand_cfg = config.get('hand', {})
@@ -25,8 +27,11 @@ class HandController:
         self.close_closure = hand_cfg.get('close_closure', 0.8)
         self.default_duration = hand_cfg.get('duration', 1.5)
 
-        # Service 客户端
-        self.client = node.create_client(SetClosure, service_name)
+        # Service 客户端（使用回调组）
+        self.client = node.create_client(
+            SetClosure, service_name,
+            callback_group=callback_group
+        )
 
         self.logger.info(f'灵巧手控制器初始化完成，Service: {service_name}')
 
@@ -76,21 +81,14 @@ class HandController:
         # 同步调用服务
         future = self.client.call_async(request)
 
-        # 等待响应（使用 spin_until_future_complete）
+        # 等待响应（使用简单循环，不使用 spin_until_future_complete）
         timeout = duration_sec + 5.0
-        try:
-            rclpy.spin_until_future_complete(
-                self.node,
-                future,
-                timeout_sec=timeout
-            )
-        except Exception as e:
-            self.logger.error(f'灵巧手控制异常: {e}')
-            return False
-
-        if not future.done():
-            self.logger.error('灵巧手控制超时')
-            return False
+        start_time = time.time()
+        while not future.done():
+            if time.time() - start_time > timeout:
+                self.logger.error('灵巧手控制超时')
+                return False
+            time.sleep(0.01)
 
         result = future.result()
         if result.success:

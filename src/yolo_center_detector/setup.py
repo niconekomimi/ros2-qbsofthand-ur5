@@ -1,4 +1,5 @@
 from setuptools import setup
+from glob import glob
 
 package_name = "yolo_center_detector"
 
@@ -9,6 +10,8 @@ setup(
     data_files=[
         ("share/" + package_name, ["package.xml"]),
         ("share/" + package_name + "/launch", ["launch/yolo_center.launch.py"]),
+        ("share/" + package_name + "/config", glob("config/*.yaml")),
+        ("share/" + package_name + "/resource/models", glob("resource/models/*.pt")),
     ],
     install_requires=["setuptools"],
     zip_safe=True,

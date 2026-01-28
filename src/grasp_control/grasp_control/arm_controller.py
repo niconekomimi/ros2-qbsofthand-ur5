@@ -1,5 +1,6 @@
 """机械臂控制模块：UR5 机械臂运动控制"""
 
+import time
 from typing import List, Optional
 import asyncio
 
@@ -7,6 +8,7 @@ import rclpy
 from rclpy.node import Node
 from rclpy.action import ActionClient
 from rclpy.action.client import ClientGoalHandle
+from rclpy.callback_groups import ReentrantCallbackGroup
 from control_msgs.action import FollowJointTrajectory
 from trajectory_msgs.msg import JointTrajectory, JointTrajectoryPoint
 from sensor_msgs.msg import JointState
@@ -26,10 +28,11 @@ class ArmController:
         "wrist_3_joint",
     ]
 
-    def __init__(self, node: Node, config: dict):
+    def __init__(self, node: Node, config: dict, callback_group=None):
         self.node = node
         self.config = config
         self.logger = node.get_logger()
+        self.callback_group = callback_group
 
         # 配置参数
         arm_cfg = config.get('arm', {})
@@ -40,11 +43,12 @@ class ArmController:
         self.default_time = arm_cfg.get('trajectory_time', 4.0)
         self.approach_time = arm_cfg.get('approach_time', 3.0)
 
-        # Action 客户端
+        # Action 客户端（使用回调组）
         self.action_client = ActionClient(
             node,
             FollowJointTrajectory,
-            action_name
+            action_name,
+            callback_group=callback_group
         )
 
         # 当前关节状态
@@ -53,7 +57,8 @@ class ArmController:
             JointState,
             '/joint_states',
             self._joint_state_callback,
-            10
+            10,
+            callback_group=callback_group
         )
 
         self.logger.info(f'机械臂控制器初始化完成，Action: {action_name}')
@@ -211,21 +216,14 @@ class ArmController:
         # 发送目标并等待
         send_goal_future = self.action_client.send_goal_async(goal)
 
-        # 等待目标被接受
+        # 等待目标被接受（使用简单循环，不使用 spin_until_future_complete）
         timeout = 5.0
-        try:
-            rclpy.spin_until_future_complete(
-                self.node,
-                send_goal_future,
-                timeout_sec=timeout
-            )
-        except Exception as e:
-            self.logger.error(f'发送目标异常: {e}')
-            return False
-
-        if not send_goal_future.done():
-            self.logger.error('发送目标超时')
-            return False
+        start_time = time.time()
+        while not send_goal_future.done():
+            if time.time() - start_time > timeout:
+                self.logger.error('发送目标超时')
+                return False
+            time.sleep(0.01)
 
         goal_handle = send_goal_future.result()
         if not goal_handle.accepted:
@@ -234,18 +232,15 @@ class ArmController:
 
         self.logger.info('轨迹目标已接受，等待执行完成...')
 
-        # 等待执行完成
+        # 等待执行完成（使用简单循环）
         result_future = goal_handle.get_result_async()
         timeout = duration_sec + 10.0
-        try:
-            rclpy.spin_until_future_complete(
-                self.node,
-                result_future,
-                timeout_sec=timeout
-            )
-        except Exception as e:
-            self.logger.error(f'轨迹执行异常: {e}')
-            return False
+        start_time = time.time()
+        while not result_future.done():
+            if time.time() - start_time > timeout:
+                self.logger.error('轨迹执行超时')
+                return False
+            time.sleep(0.01)
 
         if not result_future.done():
             self.logger.error('轨迹执行超时')

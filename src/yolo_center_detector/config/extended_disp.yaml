@@ -1,0 +1,11 @@
+/**:
+  ros__parameters:
+    stereo:
+      # --- 1. 基础开关 ---
+      i_align_depth: true          # YOLO必须开   
+      i_subpixel: false            # 必须关，为了兼容 Shift
+
+      # --- 2. 近视模式：解决 65cm 限制 ---
+      i_enable_disparity_shift: true
+      i_disparity_shift: 50      # 调整视差偏移，单位像素，根据实际情况微调,越大视野越近
+

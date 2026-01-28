@@ -1,5 +1,6 @@
 """MoveIt2 机械臂控制模块：使用 MoveGroup Action 进行笛卡尔运动"""
 
+import time
 from typing import List, Optional, Tuple
 import numpy as np
 
@@ -101,21 +102,14 @@ class MoveItArmController:
         # 发送目标并等待
         send_goal_future = self.action_client.send_goal_async(goal)
 
-        # 等待目标被接受
+        # 等待目标被接受（使用简单循环，不使用 spin_until_future_complete）
         timeout = 10.0
-        try:
-            rclpy.spin_until_future_complete(
-                self.node,
-                send_goal_future,
-                timeout_sec=timeout
-            )
-        except Exception as e:
-            self.logger.error(f'发送目标异常: {e}')
-            return False
-
-        if not send_goal_future.done():
-            self.logger.error('发送目标超时')
-            return False
+        start_time = time.time()
+        while not send_goal_future.done():
+            if time.time() - start_time > timeout:
+                self.logger.error('发送目标超时')
+                return False
+            time.sleep(0.01)
 
         goal_handle: ClientGoalHandle = send_goal_future.result()
         if not goal_handle.accepted:
@@ -124,22 +118,15 @@ class MoveItArmController:
 
         self.logger.info('目标已接受，等待规划和执行...')
 
-        # 等待执行完成
+        # 等待执行完成（使用简单循环）
         result_future = goal_handle.get_result_async()
         timeout = self.planning_time + 30.0  # 规划时间 + 执行时间
-        try:
-            rclpy.spin_until_future_complete(
-                self.node,
-                result_future,
-                timeout_sec=timeout
-            )
-        except Exception as e:
-            self.logger.error(f'运动执行异常: {e}')
-            return False
-
-        if not result_future.done():
-            self.logger.error('运动执行超时')
-            return False
+        start_time = time.time()
+        while not result_future.done():
+            if time.time() - start_time > timeout:
+                self.logger.error('运动执行超时')
+                return False
+            time.sleep(0.01)
 
         result = result_future.result()
         if result.result.error_code.val == 1:  # SUCCESS

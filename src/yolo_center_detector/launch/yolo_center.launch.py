@@ -1,10 +1,11 @@
 from launch import LaunchDescription
 from launch_ros.actions import Node
+from ament_index_python.packages import get_package_share_directory
 import os
 
 def generate_launch_description():
-    package_dir = "/home/rvl/ros2_ws/src/yolo_center_detector"
-    model_path = os.path.join(package_dir, "resource/models/yolo26s.pt")
+    package_share_dir = get_package_share_directory("yolo_center_detector")
+    model_path = os.path.join(package_share_dir, "resource", "models", "yolo26s.pt")
     
     return LaunchDescription([
         Node(
@@ -20,7 +21,7 @@ def generate_launch_description():
                 "imgsz": 640,
                 "half": False,
                 "target_list": ["orange"],  # 检测橙子
-                "topk_per_class": 0,
+                "topk_per_class": 0,    # 0 表示不限制数量
                 
                 "image_topic": "/oak/rgb/image_raw",
                 "depth_topic": "/oak/stereo/image_raw",
