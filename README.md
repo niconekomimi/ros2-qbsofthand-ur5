@@ -13,6 +13,7 @@
 - ✅ YOLO 物体检测（支持 COCO 80 类）
 - ✅ 实时深度信息获取（3D 定位）
 - ✅ 坐标系变换与可视化
+- ✅ **视觉抓取控制**（MoveIt2 集成）
 
 ---
 
@@ -59,7 +60,7 @@ colcon build --symlink-install
 source install/setup.bash
 ```
 
-### 日常启动（5 个终端）
+### 日常启动（6 个终端）
 
 ```bash
 # 终端 1：相机
@@ -78,8 +79,11 @@ ros2 launch easy_handeye2 publish.launch.py name:=ur5_oak_eyehand
 # 终端 4：灵巧手
 ros2 run qbsofthand_control qbsofthand_control_node
 
-# 终端 5：YOLO 检测（可选）
+# 终端 5：YOLO 检测
 ros2 launch yolo_center_detector yolo_center.launch.py
+
+# 终端 6：MoveIt2（抓取控制需要）
+ros2 launch ur_moveit_config ur_moveit.launch.py ur_type:=ur5
 ```
 
 > ⚠️ **关键**：终端 3 的标定发布命令不可跳过
@@ -95,6 +99,7 @@ ros2 launch yolo_center_detector yolo_center.launch.py
 | [03 softhand控制.md](03%20softhand控制.md) | 灵巧手控制方法 |
 | [04 手眼标定.md](04%20手眼标定.md) | **关键**：完整标定流程 |
 | [05 yolo识别.md](05%20yolo识别.md) | YOLO 物体检测与深度获取 |
+| [06 物体识别抓取.md](06%20物体识别抓取.md) | **核心**：视觉抓取控制 |
 
 ---
 
@@ -136,6 +141,7 @@ ros2 run image_tools showimage --ros-args -r image:=/detections_visualization
 ```
 ros2_ws/
 ├── src/
+│   ├── grasp_control/           # 抓取控制包（本项目）
 │   ├── yolo_center_detector/    # YOLO 检测包（本项目）
 │   ├── qbsofthand_control/      # 灵巧手控制包（本项目）
 │   ├── Universal_Robots_ROS2_Driver/
@@ -146,7 +152,7 @@ ros2_ws/
 │   ├── aruco_transform_to_tf.py
 │   └── ur_send_small_trajectory.py
 ├── requirements.txt             # Python 依赖
-├── 01-05.md                     # 详细文档
+├── 01-06.md                     # 详细文档
 └── README.md
 ```
 

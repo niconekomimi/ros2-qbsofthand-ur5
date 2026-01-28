@@ -13,21 +13,26 @@ source install/setup.bash
 ```bash
 ros2 launch depthai_examples rgb_stereo_node.launch.py
 ```
+```bash
+# 因为okd相机（绝大多数双目相机）的rgb图和深度图不一致，需要配置相机的特定启动参数，将深度图和rgb图对齐
+# 由于相机720p下深度图距离只有70cm，所以还要开启视察拓展
+ros2 launch depthai_ros_driver camera.launch.py align_depth:=true stereo_use_extended_disparity:=true
+```
 
 ### 3. 启动 YOLO 检测
 ```bash
 source ~/ros2_ws/install/setup.bash
 
-# 方式1：使用 launch 文件（检测 person, bottle, cup, orange）
+# 方式1：使用 launch 文件（检测 orange）
 ros2 launch yolo_center_detector yolo_center.launch.py
 
 # 方式2：自定义参数（带深度信息）
 ros2 run yolo_center_detector yolo_center_node \
   --ros-args \
   -p model_path:=/home/rvl/ros2_ws/src/yolo_center_detector/resource/models/yolo26s.pt \
-  -p image_topic:=/color/video/image \
-  -p depth_topic:=/stereo/depth \
-  -p target_list:="[orange,person,bottle,cup]" \
+  -p image_topic:=/oak/rgb/image_raw \
+  -p depth_topic:=/oak/stereo/image_raw \
+  -p target_list:="[orange,mouse]" \
   -p conf:=0.3
 ```
 

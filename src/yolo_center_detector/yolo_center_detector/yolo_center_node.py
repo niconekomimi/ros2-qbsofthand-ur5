@@ -28,11 +28,17 @@ class YoloCenterNode(Node):
         self.declare_parameter("imgsz", 640)
         self.declare_parameter("half", False)
         self.declare_parameter("target_list", ["person"])
-        self.declare_parameter("topk_per_class", 0)  # 0=全部；>0=每类topk
-        self.declare_parameter("image_topic", "/image")
-        self.declare_parameter("depth_topic", "/stereo/depth")  # 深度图话题
+        self.declare_parameter("topk_per_class", 0)
+        
+        # [修改] 更新为 OAK-D 默认话题
+        self.declare_parameter("image_topic", "/oak/rgb/image_raw")
+        self.declare_parameter("depth_topic", "/oak/stereo/image_raw")
+        
+        # [关键] 深度采样区域比例 (0.4 表示只取中心 40% 的区域测距，避免背景干扰)
+        self.declare_parameter("depth_roi_ratio", 0.4) 
+        
         self.declare_parameter("publish_pose_array", True)
-        self.declare_parameter("publish_visualization", True)  # 发布带检测框的图像
+        self.declare_parameter("publish_visualization", True)
 
         model_path = self.get_parameter("model_path").get_parameter_value().string_value
         device = self.get_parameter("device").get_parameter_value().string_value
@@ -59,24 +65,19 @@ class YoloCenterNode(Node):
                 verbose=False,
             )
             self.get_logger().info("Model loaded successfully!")
-            
-            # 显示模型支持的类名
-            self.get_logger().info(f"Model supports {len(self.detector.id2name)} classes: {list(self.detector.id2name.values())}")
         except Exception as e:
             self.get_logger().error(f"Failed to load model: {e}")
             raise
 
         self.bridge = CvBridge()
-        self.latest_depth = None  # 保存最新深度图
-        self.depth_received = False  # 标记是否接收到深度图
+        self.latest_depth = None
+        self.depth_received = False
 
         image_topic = self.get_parameter("image_topic").get_parameter_value().string_value
         depth_topic = self.get_parameter("depth_topic").get_parameter_value().string_value
         
-        # 图像订阅使用默认 sensor_data QoS (BEST_EFFORT)
         self.sub = self.create_subscription(Image, image_topic, self.on_image, qos_profile_sensor_data)
         
-        # 深度订阅使用 RELIABLE QoS 匹配发布者
         depth_qos = QoSProfile(
             reliability=ReliabilityPolicy.RELIABLE,
             history=HistoryPolicy.KEEP_LAST,
@@ -86,69 +87,93 @@ class YoloCenterNode(Node):
 
         self.pub_det = self.create_publisher(Detection2DArray, "/detections", 10)
         self.pub_pose = self.create_publisher(PoseArray, "/centers", 10)
-        self.pub_viz = self.create_publisher(Image, "/detections_visualization", 10)  # 发布带检测框的图像
+        self.pub_viz = self.create_publisher(Image, "/detections_visualization", 10)
 
         self.publish_pose_array = bool(self.get_parameter("publish_pose_array").value)
         self.publish_visualization = bool(self.get_parameter("publish_visualization").value)
+        self.depth_roi_ratio = float(self.get_parameter("depth_roi_ratio").value)
 
-        self.get_logger().info(f"Subscribed: {image_topic}")
-        self.get_logger().info(f"Depth topic: {depth_topic}")
-        self.get_logger().info(f"Target list: {self.target_list}")
-        self.get_logger().info(f"Publishing visualizations: {self.publish_visualization}")
+        self.get_logger().info(f"Subscribed Image: {image_topic}")
+        self.get_logger().info(f"Subscribed Depth: {depth_topic}")
+        self.get_logger().info(f"Depth ROI Ratio: {self.depth_roi_ratio} (Center Sampling)")
 
     def on_depth(self, msg: Image):
         """接收并存储深度图"""
         try:
-            # 深度图通常是 16UC1 或 32FC1 格式
             self.latest_depth = self.bridge.imgmsg_to_cv2(msg, desired_encoding="passthrough")
             if not self.depth_received:
-                self.get_logger().info(f"Depth stream started: {self.latest_depth.shape}, dtype={self.latest_depth.dtype}, encoding={msg.encoding}")
+                self.get_logger().info(f"Depth stream started: {self.latest_depth.shape}, dtype={self.latest_depth.dtype}")
                 self.depth_received = True
-            self.get_logger().debug(f"Depth image received: {self.latest_depth.shape}, dtype={self.latest_depth.dtype}, encoding={msg.encoding}")
         except Exception as e:
             self.get_logger().error(f"Depth image conversion error: {e}")
 
-    def get_depth_at_bbox(self, x1: int, y1: int, x2: int, y2: int) -> float:
-        """获取检测框内的有效深度值（使用中位数，更鲁棒）"""
+    def get_central_roi(self, x1: int, y1: int, x2: int, y2: int) -> tuple[int, int, int, int]:
+        """
+        计算检测框中心的采样区域 (ROI)
+        注意：这里假设 RGB 和 深度图已经开启了 align_depth，分辨率一致，不需要坐标映射
+        """
         if self.latest_depth is None:
-            self.get_logger().debug("No depth image received yet")
+            return x1, y1, x2, y2
+
+        h_img, w_img = self.latest_depth.shape[:2]
+
+        box_w = x2 - x1
+        box_h = y2 - y1
+        cx = x1 + box_w / 2
+        cy = y1 + box_h / 2
+
+        # 计算 ROI 大小
+        roi_w = box_w * self.depth_roi_ratio
+        roi_h = box_h * self.depth_roi_ratio
+
+        rx1 = int(cx - roi_w / 2)
+        rx2 = int(cx + roi_w / 2)
+        ry1 = int(cy - roi_h / 2)
+        ry2 = int(cy + roi_h / 2)
+
+        # 边界限制
+        rx1 = max(0, min(w_img - 1, rx1))
+        ry1 = max(0, min(h_img - 1, ry1))
+        rx2 = max(0, min(w_img - 1, rx2))
+        ry2 = max(0, min(h_img - 1, ry2))
+
+        return rx1, ry1, rx2, ry2
+
+    def get_depth_at_bbox(self, x1: int, y1: int, x2: int, y2: int) -> float:
+        """获取检测框内的有效深度值"""
+        if self.latest_depth is None:
+            return 0.0
+
+        # 获取中心 ROI 区域（避开背景）
+        rx1, ry1, rx2, ry2 = self.get_central_roi(x1, y1, x2, y2)
+
+        if rx2 <= rx1 or ry2 <= ry1:
             return 0.0
         
-        h, w = self.latest_depth.shape[:2]
-        x1 = max(0, min(w - 1, x1))
-        y1 = max(0, min(h - 1, y1))
-        x2 = max(0, min(w - 1, x2))
-        y2 = max(0, min(h - 1, y2))
+        region = self.latest_depth[ry1:ry2, rx1:rx2]
         
-        # 获取检测框内的深度区域
-        region = self.latest_depth[y1:y2+1, x1:x2+1]
-        
-        # 处理不同的深度格式
+        # 32FC1 (Meter)
         if self.latest_depth.dtype == np.float32:
-            # 32FC1: 通常已经是米为单位
-            valid = region[(region > 0) & (region < 10.0)]  # 过滤无效和过大的值
-            if len(valid) == 0:
-                return 0.0
+            valid = region[(region > 0.1) & (region < 15.0)] # 过滤 0 和过远
+            if len(valid) == 0: return 0.0
             return float(np.median(valid))
+        
+        # 16UC1 (Millimeter)
         else:
-            # 16UC1: 通常以毫米为单位
-            valid = region[region > 0]  # 过滤无效深度
-            if len(valid) == 0:
-                return 0.0
+            valid = region[region > 0]
+            if len(valid) == 0: return 0.0
             depth_mm = float(np.median(valid))
-            return depth_mm / 1000.0  # 转换为米
+            return depth_mm / 1000.0
 
     def on_image(self, msg: Image):
+        # 1. Image Processing
         encoding = (msg.encoding or "bgr8").lower()
-
         try:
-            # Keep original data first, then convert to BGR for detector/overlay
             raw_img = self.bridge.imgmsg_to_cv2(msg, desired_encoding="passthrough")
         except Exception as e:
             self.get_logger().error(f"cv_bridge error: {e}")
             return
 
-        # Ensure BGR for YOLO (and for consistent overlay colors)
         if encoding in ("rgb8", "rgba8"):
             img = cv2.cvtColor(raw_img, cv2.COLOR_RGB2BGR)
         elif encoding == "bgra8":
@@ -156,90 +181,101 @@ class YoloCenterNode(Node):
         else:
             img = raw_img
 
+        # 2. Inference
         try:
             dets = self.detector.detect(img, self.target_list, topk_per_class=self.topk_per_class)
         except Exception as e:
             self.get_logger().error(f"Detection error: {e}")
             return
 
-        if len(dets) > 0:
-            self.get_logger().info(f"Detected {len(dets)} objects from target list {self.target_list}")
-            if self.latest_depth is not None:
-                self.get_logger().debug(f"Depth image available: shape={self.latest_depth.shape}, dtype={self.latest_depth.dtype}")
-            for det in dets:
-                self.get_logger().debug(f"  - {det.cls_name}: center=({det.center[0]}, {det.center[1]}), conf={det.conf:.2f}")
-
-        # ---- Publish Detection2DArray ----
+        # 3. Process Detections
         det_array = Detection2DArray()
         det_array.header = msg.header
-
-        # ---- Prepare visualization image ----
+        
+        # [修改] 准备可视化图像：默认为 RGB
         viz_img = img.copy() if self.publish_visualization else None
+        
+        # [新增] 深度图融合调试：如果有深度图，将其彩色化并叠加到 viz_img 上
+        if self.publish_visualization and viz_img is not None and self.latest_depth is not None:
+            try:
+                # 获取深度图并归一化到 0-255 用于显示
+                # 限制范围 0-5米 以获得更好的对比度
+                depth_disp = self.latest_depth.copy()
+                if self.latest_depth.dtype == np.float32:
+                    depth_disp = np.clip(depth_disp, 0, 5.0) 
+                    depth_disp = cv2.normalize(depth_disp, None, 0, 255, cv2.NORM_MINMAX).astype(np.uint8)
+                else:
+                    # 16UC1 (mm) -> clip at 5000mm
+                    depth_disp = np.clip(depth_disp, 0, 5000)
+                    depth_disp = cv2.normalize(depth_disp, None, 0, 255, cv2.NORM_MINMAX).astype(np.uint8)
+                
+                # 生成热力图 (近=红/暖, 远=蓝/冷)
+                depth_colormap = cv2.applyColorMap(depth_disp, cv2.COLORMAP_JET)
+                
+                # 如果尺寸不一致（说明没对齐），强行缩放以便观察偏离情况
+                if depth_colormap.shape[:2] != viz_img.shape[:2]:
+                    depth_colormap = cv2.resize(depth_colormap, (viz_img.shape[1], viz_img.shape[0]))
+                
+                # 叠加：RGB * 0.6 + Depth * 0.4
+                viz_img = cv2.addWeighted(viz_img, 0.6, depth_colormap, 0.4, 0)
+                
+                cv2.putText(viz_img, "Depth Overlay Mode", (10, 30), 
+                           cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
+            except Exception as e:
+                self.get_logger().warn(f"Visualization overlay error: {e}")
 
         for d in dets:
             x1, y1, x2, y2 = d.bbox
             cx, cy = d.center
-            w = max(0.0, float(x2 - x1))
-            h = max(0.0, float(y2 - y1))
+            w, h = float(x2 - x1), float(y2 - y1)
+
+            # 获取深度
+            depth = self.get_depth_at_bbox(int(x1), int(y1), int(x2), int(y2))
 
             det_msg = Detection2D()
             det_msg.header = msg.header
-
             bbox = BoundingBox2D()
             pose2d = Pose2D()
-            pose2d.position.x = float(cx)
-            pose2d.position.y = float(cy)
-            pose2d.theta = 0.0
-            bbox.center = pose2d
-            bbox.size_x = w
-            bbox.size_y = h
+            pose2d.position.x = float(cx); pose2d.position.y = float(cy)
+            bbox.center = pose2d; bbox.size_x = w; bbox.size_y = h
             det_msg.bbox = bbox
-
             hyp = ObjectHypothesisWithPose()
             hyp.hypothesis.class_id = d.cls_name
             hyp.hypothesis.score = float(d.conf)
             det_msg.results.append(hyp)
-
             det_array.detections.append(det_msg)
 
-            # ---- Draw bbox on visualization ----
+            # Draw Visualization
             if viz_img is not None:
-                color = (0, 255, 0)  # 绿色
-                thickness = 2
-                # 绘制矩形框
-                cv2.rectangle(viz_img, (int(x1), int(y1)), (int(x2), int(y2)), color, thickness)
-                # 绘制中心点
-                cv2.circle(viz_img, (int(cx), int(cy)), 5, (0, 0, 255), -1)  # 红色圆点
+                # 绿色框：YOLO
+                cv2.rectangle(viz_img, (int(x1), int(y1)), (int(x2), int(y2)), (0, 255, 0), 2)
+                # 蓝色框：深度采样区
+                rx1, ry1, rx2, ry2 = self.get_central_roi(int(x1), int(y1), int(x2), int(y2))
+                cv2.rectangle(viz_img, (rx1, ry1), (rx2, ry2), (255, 0, 0), 2)
                 
-                # 获取检测框内的深度值（使用整个框而不是中心点）
-                depth = self.get_depth_at_bbox(int(x1), int(y1), int(x2), int(y2))
-                self.get_logger().debug(f"Depth in bbox ({int(x1)}, {int(y1)})-({int(x2)}, {int(y2)}): {depth:.3f}m")
-                if depth > 0:
-                    label = f"{d.cls_name}: {d.conf:.2f} [{depth:.2f}m]"
-                else:
-                    label = f"{d.cls_name}: {d.conf:.2f}"
-                cv2.putText(viz_img, label, (int(x1), int(y1) - 5), 
-                           cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, thickness)
+                label_text = f"{d.cls_name} {depth:.2f}m"
+                # 加个黑色背景让字更清楚
+                t_size = cv2.getTextSize(label_text, cv2.FONT_HERSHEY_SIMPLEX, 0.6, 2)[0]
+                cv2.rectangle(viz_img, (int(x1), int(y1)-25), (int(x1)+t_size[0], int(y1)), (0,0,0), -1)
+                cv2.putText(viz_img, label_text, (int(x1), int(y1)-5), 
+                           cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 2)
 
         self.pub_det.publish(det_array)
 
-        # ---- Publish visualization image ----
+        # Publish Viz
         if self.publish_visualization and viz_img is not None:
             try:
-                # Match published encoding to original to avoid color shifts in viewers
-                if encoding in ("rgb8", "rgba8"):
-                    out_img = cv2.cvtColor(viz_img, cv2.COLOR_BGR2RGB)
-                    out_enc = "rgb8"
-                else:
-                    out_img = viz_img
-                    out_enc = "bgr8"
-                viz_msg = self.bridge.cv2_to_imgmsg(out_img, encoding=out_enc)
+                # 强制转换为 RGB8 格式发布，解决变色问题
+                # OpenCV 内部是 BGR，ROS 里的显示工具通常期望 RGB
+                out_img = cv2.cvtColor(viz_img, cv2.COLOR_BGR2RGB)
+                
+                viz_msg = self.bridge.cv2_to_imgmsg(out_img, encoding="rgb8")
                 viz_msg.header = msg.header
                 self.pub_viz.publish(viz_msg)
             except Exception as e:
                 self.get_logger().error(f"Failed to publish visualization: {e}")
-
-        # ---- Optional Publish PoseArray of centers ----
+        
+        # Publish Pose
         if self.publish_pose_array:
             pa = PoseArray()
             pa.header = msg.header
@@ -247,15 +283,11 @@ class YoloCenterNode(Node):
                 cx, cy = d.center
                 x1, y1, x2, y2 = d.bbox
                 depth = self.get_depth_at_bbox(int(x1), int(y1), int(x2), int(y2))
-                
                 p = Pose()
-                p.position.x = float(cx)
-                p.position.y = float(cy)
-                p.position.z = depth  # 深度值（米）
+                p.position.x = float(cx); p.position.y = float(cy); p.position.z = depth
                 p.orientation.w = 1.0
                 pa.poses.append(p)
             self.pub_pose.publish(pa)
-
 
 def main():
     rclpy.init()
