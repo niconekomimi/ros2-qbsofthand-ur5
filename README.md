@@ -28,6 +28,7 @@
 - ✅ 实时深度信息获取（3D 定位）
 - ✅ 坐标系变换与可视化
 - ✅ **视觉抓取控制**（MoveIt2 集成）
+- ✅ **一个简单的抓取子demo**
 
 ---
 
@@ -98,9 +99,13 @@ ros2 launch yolo_center_detector yolo_center.launch.py
 
 # 终端 6：MoveIt2（抓取控制需要）
 ros2 launch ur_moveit_config ur_moveit.launch.py ur_type:=ur5
-```
 
-> ⚠️ **关键**：终端 3 的标定发布命令不可跳过
+# 终端 7：抓取控制
+ros2 launch grasp_control grasp_control.launch.py
+
+# 终端 8：触发抓取
+ros2 service call /grasp_control_node/trigger std_srvs/srv/Trigger
+```
 
 ---
 
