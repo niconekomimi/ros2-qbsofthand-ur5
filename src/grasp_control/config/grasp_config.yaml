@@ -32,13 +32,13 @@ arm:
     - "wrist_1_joint"
     - "wrist_2_joint"
     - "wrist_3_joint"
-  trajectory_time: 10.0      # 默认轨迹时间
+  trajectory_time: 5.0      # 默认轨迹时间
   approach_time: 10.0       # 接近物体时间
 
 # ---------- 灵巧手控制 ----------
 hand:
   service: "/qbsofthand_control_node/set_closure"
-  open_closure: 0.0         # 张开
+  open_closure: 0.4         # 张开
   close_closure: 0.8        # 闭合
   duration: 1.5             # 时间
 
@@ -60,7 +60,7 @@ positions:
     - 1.362    # elbow_joint
     - -3.303   # wrist_1_joint
     - -1.763   # wrist_2_joint
-    - -1.552   # wrist_3_joint
+    - -1.723   # wrist_3_joint
 
 
 # ---------- 抓取参数 ----------
@@ -69,9 +69,9 @@ grasp:
 
   # 末端执行器相对于物体中心的偏移（米）
   tcp_offset:
-    x: -0.03
-    y: 0.12
-    z: 0.06
+    x: -0.01
+    y: 0.13
+    z: 0.04
 
   # 抓取姿态：支持 RPY 或 rx,ry,rz
   orientation:

@@ -1,13 +1,11 @@
-"""MoveIt2 机械臂控制模块：支持关节角度约束"""
+"""MoveIt2 机械臂控制模块：支持关节角度约束（稳健同步版）"""
 
 import time
-import math
 from typing import List, Optional, Dict
 
 import rclpy
 from rclpy.node import Node
 from rclpy.action import ActionClient
-from rclpy.action.client import ClientGoalHandle
 
 # 必须导入 JointConstraint
 from moveit_msgs.srv import GetCartesianPath
@@ -39,6 +37,7 @@ class MoveItArmController:
         self.acceleration_scaling = moveit_cfg.get('acceleration_scaling', 0.1)
 
         # Action 客户端
+        # 注意：使用默认回调组 (MutuallyExclusive)，依靠 MultiThreadedExecutor 处理响应
         self.action_client = ActionClient(node, MoveGroup, '/move_action')
         
         # 笛卡尔路径服务
@@ -59,8 +58,17 @@ class MoveItArmController:
         self.logger.info('MoveIt2 服务器已就绪')
         return True
 
+    def _wait_for_future(self, future, timeout_sec: float = 10.0):
+        """[新增] 稳健的等待函数，替代 spin_once"""
+        start_time = time.time()
+        while not future.done():
+            if time.time() - start_time > timeout_sec:
+                return None
+            time.sleep(0.01) # 释放 CPU，允许 Executor 的其他线程处理回调
+        return future.result()
+
     def move_cartesian_path(self, waypoints: List[Pose], step: float = 0.01, speed_factor: float = 0.1) -> bool:
-        """执行笛卡尔直线运动 (带手动降速)"""
+        """执行笛卡尔直线运动"""
         if not self.cartesian_client.service_is_ready():
             self.logger.error('无法连接到 compute_cartesian_path 服务')
             return False
@@ -75,9 +83,11 @@ class MoveItArmController:
         req.avoid_collisions = True
 
         future = self.cartesian_client.call_async(req)
-        while not future.done():
-            rclpy.spin_once(self.node, timeout_sec=0.01)
-        response = future.result()
+        response = self._wait_for_future(future, timeout_sec=5.0)
+
+        if response is None:
+            self.logger.error('笛卡尔路径规划超时')
+            return False
 
         if response.error_code.val != 1:
             self.logger.error(f'笛卡尔路径计算失败: {response.error_code.val}')
@@ -141,13 +151,25 @@ class MoveItArmController:
         
         self.logger.info('开始执行轨迹...')
         future = self.exec_traj_client.send_goal_async(goal)
-        while not future.done(): rclpy.spin_once(self.node, timeout_sec=0.01)
-        goal_handle = future.result()
-        if not goal_handle.accepted: return False
+        
+        goal_handle = self._wait_for_future(future, timeout_sec=5.0)
+
+        if goal_handle is None:
+            self.logger.error('轨迹执行请求超时或返回 None')
+            return False
+
+        if not goal_handle.accepted:
+            self.logger.error('轨迹目标被拒绝')
+            return False
             
         res_future = goal_handle.get_result_async()
-        while not res_future.done(): rclpy.spin_once(self.node, timeout_sec=0.01)
-        return res_future.result().result.error_code.val == 1
+        res = self._wait_for_future(res_future, timeout_sec=15.0)
+        
+        if res is None:
+            self.logger.error('等待轨迹执行结果超时')
+            return False
+
+        return res.result.error_code.val == 1
 
     def move_to_pose_sync(
         self, 
@@ -156,9 +178,7 @@ class MoveItArmController:
         joint_limits: Optional[Dict[str, tuple]] = None
     ) -> bool:
         """
-        PTP 移动，支持关节约束
-        Args:
-            joint_limits: 字典 {'joint_name': (min_angle, max_angle)}
+        PTP 移动，支持关节约束 (修复：安全等待，处理 None)
         """
         if velocity_scaling is None: velocity_scaling = self.velocity_scaling
 
@@ -171,13 +191,31 @@ class MoveItArmController:
         
         self.logger.info('规划路径 (Smart PTP)...')
         future = self.action_client.send_goal_async(goal)
-        while not future.done(): rclpy.spin_once(self.node, timeout_sec=0.01)
-        goal_handle = future.result()
-        if not goal_handle.accepted: return False
         
+        # [关键修复] 增加 None 检查
+        goal_handle = self._wait_for_future(future, timeout_sec=10.0)
+
+        if goal_handle is None:
+            self.logger.error('PTP 规划请求失败：未收到 Goal Handle (超时或连接错误)')
+            return False
+
+        if not goal_handle.accepted:
+            self.logger.error('PTP 规划请求被拒绝 (目标点不可达或违反约束)')
+            return False
+        
+        self.logger.info('规划请求已接受，正在执行...')
         res_future = goal_handle.get_result_async()
-        while not res_future.done(): rclpy.spin_once(self.node, timeout_sec=0.01)
-        return res_future.result().result.error_code.val == 1
+        res = self._wait_for_future(res_future, timeout_sec=20.0)
+
+        if res is None:
+            self.logger.error('PTP 动作执行超时')
+            return False
+
+        if res.result.error_code.val == 1:
+            return True
+        else:
+            self.logger.error(f'MoveIt 错误码: {res.result.error_code.val}')
+            return False
 
     def _create_motion_plan_request(
         self, target_pose, v_scale, a_scale, 
@@ -187,6 +225,8 @@ class MoveItArmController:
         req.group_name = self.planning_group
         req.max_velocity_scaling_factor = v_scale
         req.max_acceleration_scaling_factor = a_scale
+        req.num_planning_attempts = 5 # 增加尝试次数
+        req.allowed_planning_time = self.planning_time
         
         c = Constraints()
         
@@ -197,7 +237,7 @@ class MoveItArmController:
         bv = BoundingVolume()
         sp = SolidPrimitive()
         sp.type = SolidPrimitive.SPHERE
-        sp.dimensions = [0.001]
+        sp.dimensions = [0.005] # 放宽一点点容差，防止太严苛
         bv.primitives.append(sp)
         p = Pose(); p.position = target_pose.position; p.orientation.w=1.0
         bv.primitive_poses.append(p)
@@ -210,20 +250,18 @@ class MoveItArmController:
         oc.header.frame_id = self.base_frame
         oc.link_name = self.ee_frame
         oc.orientation = target_pose.orientation
-        oc.absolute_x_axis_tolerance = 0.01
-        oc.absolute_y_axis_tolerance = 0.01
-        oc.absolute_z_axis_tolerance = 0.01
+        oc.absolute_x_axis_tolerance = 0.05 # 放宽容差
+        oc.absolute_y_axis_tolerance = 0.05
+        oc.absolute_z_axis_tolerance = 0.05
         oc.weight = 1.0
         c.orientation_constraints.append(oc)
 
-        # 3. [新增] 关节约束
+        # 3. 关节约束
         if joint_limits:
             for name, (min_val, max_val) in joint_limits.items():
                 jc = JointConstraint()
                 jc.joint_name = name
-                # 目标位置设为区间中点
                 jc.position = (min_val + max_val) / 2.0
-                # 容差设为区间的一半
                 jc.tolerance_above = (max_val - min_val) / 2.0
                 jc.tolerance_below = (max_val - min_val) / 2.0
                 jc.weight = 1.0
