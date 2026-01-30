@@ -2,6 +2,20 @@
 
 集成 UR5 机械臂、OAK-D 相机、QB Soft Hand 灵巧手的 ROS2 视觉协同系统。通过手眼标定实现在相机坐标系中识别物体，并转换到机械臂坐标系进行精确抓取。支持基于 YOLO 的物体检测与深度信息获取。
 
+📺 项目演示与识别效果
+1. 抓取流程演示 (Bilibili)
+
+点击下方图片或徽章，即可跳转至 Bilibili 查看 UR5 机械臂配合 qbsofthand 的抓取演示：
+
+<a href="https://www.bilibili.com/video/BV1Fo6qB3E5w/" target="_blank"> <img src="https://img.shields.io/badge/Bilibili-点击观看抓取演示视频-fb7299?style=for-the-badge&logo=bilibili&logoColor=white" alt="UR5 Grasping Demo" /> </a>
+2. YOLO 目标检测画面
+
+这是系统运行过程中，通过 OAK-D 相机进行目标（橙子）识别的画面：
+
+![YOLO Detection Result](doc/Image_yolo.png)
+
+说明： 系统通过 yolo_center_detector 节点实时处理 /oak/rgb/image_raw 话题，提取目标中心坐标，并为 MoveIt2 提供抓取目标。
+
 ---
 
 ## ✨ 主要功能

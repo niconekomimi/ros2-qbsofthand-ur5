@@ -38,7 +38,7 @@ arm:
 # ---------- 灵巧手控制 ----------
 hand:
   service: "/qbsofthand_control_node/set_closure"
-  open_closure: 0.4         # 张开
+  open_closure: 0.3         # 张开
   close_closure: 0.8        # 闭合
   duration: 1.5             # 时间
 
