@@ -71,7 +71,7 @@ grasp:
   tcp_offset:
     x: -0.03
     y: 0.12
-    z: 0.08
+    z: 0.06
 
   # 抓取姿态：支持 RPY 或 rx,ry,rz
   orientation:

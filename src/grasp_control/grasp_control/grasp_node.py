@@ -276,13 +276,14 @@ class GraspControlNode(Node):
             self._transition_to(GraspState.ERROR)
             return
 
-        # [关键] 定义关节约束 (单位: 弧度)
-        # joint_constraints = {
-        #     'shoulder_pan_joint': (1.1, 2.5), 
-        #     'wrist_3_joint': (0, 5.0),
-        #     'wrist_2_joint': (-2.0, -0.9),
-        #     'wrist_1_joint': (-3.14, -1.5),
-        # }
+        #[关键] 定义关节约束 (单位: 弧度)
+        joint_constraints = {
+            'shoulder_pan_joint': (1.1, 2.5), 
+            'shoulder_lift_joint': (-2.4, -1.0),
+            'wrist_3_joint': (0, 5.0),
+            'wrist_2_joint': (-2.0, -0.9),
+            'wrist_1_joint': (-3.14, -1.5),
+        }
 
         # ---------------------------------------------------------
         # 步骤 1: 高空平移 (PTP)
@@ -298,8 +299,8 @@ class GraspControlNode(Node):
         # 传入 joint_limits 参数
         if not self.moveit.move_to_pose_sync(
             hover_pose, 
-            velocity_scaling=0.4,
-            # joint_limits=joint_constraints  # <--- 加上这一行
+            velocity_scaling=0.1,
+            joint_limits=joint_constraints  # <--- 加上这一行
         ):
             self.get_logger().error('步骤1 失败: 规划无法满足关节约束 (可能目标点在死区)')
             self._transition_to(GraspState.ERROR)
@@ -328,7 +329,7 @@ class GraspControlNode(Node):
         pre_grasp_pose.orientation = final_grasp_pose.orientation
 
         self.get_logger().info('步骤3: 垂直下降...')
-        if not self.moveit.move_cartesian_path([pre_grasp_pose], step=0.01, speed_factor=0.2):
+        if not self.moveit.move_cartesian_path([pre_grasp_pose], step=0.01, speed_factor=0.1):
             self._transition_to(GraspState.ERROR)
             return
 
