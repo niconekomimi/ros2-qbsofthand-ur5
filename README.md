@@ -7,7 +7,16 @@
 
 点击下方图片或徽章，即可跳转至 Bilibili 查看 UR5 机械臂配合 qbsofthand 的抓取演示：
 
-<a href="https://www.bilibili.com/video/BV1Fo6qB3E5w/" target="_blank"> <img src="https://img.shields.io/badge/Bilibili-点击观看抓取演示视频-fb7299?style=for-the-badge&logo=bilibili&logoColor=white" alt="UR5 Grasping Demo" /> </a>
+<a href="https://www.bilibili.com/video/BV1Fo6qB3E5w/" target="_blank">
+  <img src="doc/Image.png" alt="UR5 Grasping Demo" width="600" />
+</a>
+
+<br />
+
+<a href="https://www.bilibili.com/video/BV1Fo6qB3E5w/" target="_blank">
+  <img src="https://img.shields.io/badge/Bilibili-点击观看抓取演示视频-fb7299?style=for-the-badge&logo=bilibili&logoColor=white" alt="UR5 Grasping Demo" />
+</a>
+
 2. YOLO 目标检测画面
 
 这是系统运行过程中，通过 OAK-D 相机进行目标（橙子）识别的画面：
