@@ -1,0 +1,25 @@
+# 规划组名称 (必须与你的 SRDF 文件一致，UR5 通常是 ur_manipulator 或 manipulator)
+ur_manipulator:
+  # 核心修改：指定插件为 Pick-IK
+  kinematics_solver: pick_ik/PickIkKinematicsPlugin
+  kinematics_solver_timeout: 0.1
+  kinematics_solver_attempts: 3
+
+  # --- Pick-IK 独有参数 ---
+  
+  # 模式: "local" (像KDL一样快，但更稳) 或 "global" (全空间搜索，防陷入局部极值)
+  # 针对你的跳变问题，推荐先用 "local" 配合位移权重；如果还不行，改用 "global"
+  mode: local
+  
+  # [关键] 最小位移权重 (0.0 ~ 1.0)
+  # 权重越高，越倾向于选择离当前关节角度最近的解
+  # 这能直接抑制“手腕乱翻”和“基座乱转”
+  minimal_displacement_weight: 0.5
+
+  # 姿态权重：如果你的抓取对位置要求高，对姿态稍微宽容，可以调低这个
+  orientation_weight: 1.0
+  position_weight: 1.0
+
+  # 进化参数 (仅在 global 模式下生效)
+  memetic_num_survivors: 5
+  memetic_population_size: 10

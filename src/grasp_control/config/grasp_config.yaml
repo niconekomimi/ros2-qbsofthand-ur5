@@ -1,25 +1,26 @@
+# grasp_control/config/grasp_config.yaml
 # ========== 抓取控制配置文件 ==========
 # 修改此文件可调整抓取行为，无需重新编译
 
 # ---------- 相机参数 ----------
 camera:
-  info_topic: "/color/video/camera_info"
+  info_topic: "/oak/rgb/camera_info"
   # 相机内参（备用，优先从话题获取）
-  fx: 615.0
-  fy: 615.0
-  cx: 320.0
-  cy: 240.0
+  fx: 1033.525
+  fy: 1032.762
+  cx: 627.880
+  cy: 330.726
 
 # ---------- TF 坐标系 ----------
 frames:
-  robot_base: "base_link"
+  robot_base: "base"       # 确认使用 base 坐标系（与 UR 示教器一致）
   robot_effector: "tool0"
   camera: "oak_rgb_camera_optical_frame"
 
 # ---------- YOLO 检测 ----------
 detection:
   centers_topic: "/centers"
-  target_class: "orange"  # 目标物体类别（可选: person, bottle, cup, orange）
+  target_class: "orange"  # 目标物体类别
 
 # ---------- 机械臂控制 ----------
 arm:
@@ -31,57 +32,64 @@ arm:
     - "wrist_1_joint"
     - "wrist_2_joint"
     - "wrist_3_joint"
-  trajectory_time: 4.0      # 默认轨迹时间（秒）
-  approach_time: 3.0        # 接近物体时间（秒）
+  trajectory_time: 10.0      # 默认轨迹时间
+  approach_time: 10.0       # 接近物体时间
 
 # ---------- 灵巧手控制 ----------
 hand:
   service: "/qbsofthand_control_node/set_closure"
-  open_closure: 0.0         # 张开闭合度
-  close_closure: 0.8        # 抓取闭合度
-  duration: 1.5             # 闭合持续时间（秒）
+  open_closure: 0.0         # 张开
+  close_closure: 0.8        # 闭合
+  duration: 1.5             # 时间
 
 # ---------- 关键位置（关节角度，弧度） ----------
 positions:
   # Home 位置（拍照点）- 当前位置
-  home:
-    - 2.024      # shoulder_pan_joint
-    - -1.682     # shoulder_lift_joint
-    - 1.291      # elbow_joint
-    - -1.641     # wrist_1_joint
-    - -1.792     # wrist_2_joint
-    - 1.967      # wrist_3_joint
+  home_joints:
+    - 1.788    # shoulder_pan_joint
+    - -2.172   # shoulder_lift_joint
+    - 1.435    # elbow_joint
+    - -1.528   # wrist_1_joint
+    - -1.721   # wrist_2_joint
+    - 1.773    # wrist_3_joint
 
   # 终点位置（递给人类，手心朝上）- 往前延伸
-  handover:
-    - 2.024      # shoulder_pan_joint  (保持)
-    - -1.40      # shoulder_lift_joint (往前伸)
-    - 1.50       # elbow_joint         (调整)
-    - -1.80      # wrist_1_joint       (手心朝上)
-    - 1.571      # wrist_2_joint       (翻转90度)
-    - 1.967      # wrist_3_joint       (保持)
+  handover_joints:
+    - 1.696    # shoulder_pan_joint
+    - -1.219   # shoulder_lift_joint
+    - 1.362    # elbow_joint
+    - -3.303   # wrist_1_joint
+    - -1.763   # wrist_2_joint
+    - -1.552   # wrist_3_joint
+
 
 # ---------- 抓取参数 ----------
 grasp:
-  approach_height: 0.03     # 物体上方高度（米）
-  lift_height: 0.10         # 抬起高度（米）
-  # 末端执行器姿态（水平抓取，RPY 弧度）
+  lift_height: 0.30         # 抬起高度（米）
+
+  # 末端执行器相对于物体中心的偏移（米）
+  tcp_offset:
+    x: -0.03
+    y: 0.12
+    z: 0.08
+
+  # 抓取姿态：支持 RPY 或 rx,ry,rz
   orientation:
-    roll: 3.14159           # 180度，手心朝下
-    pitch: 0.0              # 0度，水平
-    yaw: 0.0                # 根据物体方向调整
+    roll: -1.152
+    pitch: 1.285
+    yaw: -2.661
 
 # ---------- 安全限制 ----------
 safety:
-  min_z: 0.05               # 最低高度限制（米）
-  max_reach: 0.85           # 最大伸展距离（米）
-  detection_timeout: 10.0   # 检测超时（秒）
-  motion_timeout: 30.0      # 运动超时（秒）
+  min_z: 0.05               # 最低高度限制
+  max_reach: 0.85           # 最大伸展距离
+  detection_timeout: 10.0   # 检测超时
+  motion_timeout: 30.0      # 运动超时
 
 # ---------- MoveIt2 配置 ----------
 moveit:
-  planning_group: "ur_manipulator"  # MoveIt 规划组名称
-  end_effector_frame: "tool0"       # 末端执行器坐标系
-  planning_time: 5.0                # 规划时间限制（秒）
-  velocity_scaling: 0.3             # 速度缩放因子 [0.0, 1.0]
-  acceleration_scaling: 0.3         # 加速度缩放因子 [0.0, 1.0]
+  planning_group: "ur_manipulator"
+  end_effector_frame: "tool0"
+  planning_time: 20.0
+  velocity_scaling: 0.1
+  acceleration_scaling: 0.1

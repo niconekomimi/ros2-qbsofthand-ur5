@@ -1,25 +1,24 @@
-"""MoveIt2 机械臂控制模块：使用 MoveGroup Action 进行笛卡尔运动"""
+"""MoveIt2 机械臂控制模块：支持关节角度约束"""
 
 import time
-from typing import List, Optional, Tuple
-import numpy as np
+import math
+from typing import List, Optional, Dict
 
 import rclpy
 from rclpy.node import Node
 from rclpy.action import ActionClient
 from rclpy.action.client import ClientGoalHandle
 
-from moveit_msgs.action import MoveGroup
+# 必须导入 JointConstraint
+from moveit_msgs.srv import GetCartesianPath
+from moveit_msgs.action import MoveGroup, ExecuteTrajectory
 from moveit_msgs.msg import (
-    MotionPlanRequest,
-    Constraints,
-    PositionConstraint,
-    OrientationConstraint,
-    BoundingVolume,
-    RobotState,
+    MotionPlanRequest, Constraints, PositionConstraint,
+    OrientationConstraint, JointConstraint, BoundingVolume, RobotTrajectory
 )
-from geometry_msgs.msg import Pose, PoseStamped
+from geometry_msgs.msg import Pose
 from shape_msgs.msg import SolidPrimitive
+from builtin_interfaces.msg import Duration
 
 
 class MoveItArmController:
@@ -36,166 +35,202 @@ class MoveItArmController:
         self.base_frame = config.get('frames', {}).get('robot_base', 'base_link')
         self.ee_frame = moveit_cfg.get('end_effector_frame', 'tool0')
         self.planning_time = moveit_cfg.get('planning_time', 5.0)
-        self.velocity_scaling = moveit_cfg.get('velocity_scaling', 0.3)
-        self.acceleration_scaling = moveit_cfg.get('acceleration_scaling', 0.3)
+        self.velocity_scaling = moveit_cfg.get('velocity_scaling', 0.1)
+        self.acceleration_scaling = moveit_cfg.get('acceleration_scaling', 0.1)
 
-        # MoveGroup Action 客户端
-        self.action_client = ActionClient(
-            node,
-            MoveGroup,
-            '/move_action'
+        # Action 客户端
+        self.action_client = ActionClient(node, MoveGroup, '/move_action')
+        
+        # 笛卡尔路径服务
+        self.cartesian_client = node.create_client(
+            GetCartesianPath, '/compute_cartesian_path'
         )
 
-        self.logger.info(
-            f'MoveIt 控制器初始化完成，规划组: {self.planning_group}'
-        )
+        self.logger.info(f'MoveIt 控制器初始化完成，规划组: {self.planning_group}')
 
     def wait_for_server(self, timeout_sec: float = 10.0) -> bool:
-        """等待 MoveGroup Action 服务器就绪"""
         self.logger.info('等待 MoveIt2 服务器...')
-        ready = self.action_client.wait_for_server(timeout_sec=timeout_sec)
-        if ready:
-            self.logger.info('MoveIt2 服务器已就绪')
-        else:
-            self.logger.error('MoveIt2 服务器连接超时')
-        return ready
+        if not self.action_client.wait_for_server(timeout_sec=timeout_sec):
+            self.logger.error('MoveAction 连接超时')
+            return False
+        if not self.cartesian_client.wait_for_service(timeout_sec=timeout_sec):
+            self.logger.error('CartesianPath 服务连接超时')
+            return False
+        self.logger.info('MoveIt2 服务器已就绪')
+        return True
+
+    def move_cartesian_path(self, waypoints: List[Pose], step: float = 0.01, speed_factor: float = 0.1) -> bool:
+        """执行笛卡尔直线运动 (带手动降速)"""
+        if not self.cartesian_client.service_is_ready():
+            self.logger.error('无法连接到 compute_cartesian_path 服务')
+            return False
+
+        req = GetCartesianPath.Request()
+        req.header.frame_id = self.base_frame
+        req.header.stamp = self.node.get_clock().now().to_msg()
+        req.group_name = self.planning_group
+        req.waypoints = waypoints
+        req.max_step = step
+        req.jump_threshold = 0.0 
+        req.avoid_collisions = True
+
+        future = self.cartesian_client.call_async(req)
+        while not future.done():
+            rclpy.spin_once(self.node, timeout_sec=0.01)
+        response = future.result()
+
+        if response.error_code.val != 1:
+            self.logger.error(f'笛卡尔路径计算失败: {response.error_code.val}')
+            return False
+
+        if response.fraction < 0.90:
+             self.logger.warn(f'笛卡尔路径仅计算了 {response.fraction*100:.1f}%，放弃执行')
+             return False
+
+        # 手动降速
+        slow_trajectory = self._scale_trajectory_speed(response.solution, speed_factor)
+        return self._execute_trajectory(slow_trajectory)
+
+    def _scale_trajectory_speed(self, robot_traj: RobotTrajectory, scale: float) -> RobotTrajectory:
+        """手动重新计算时间戳以降低速度"""
+        joint_traj = robot_traj.joint_trajectory
+        if not joint_traj.points: return robot_traj
+
+        base_speed = 1.5 * scale  # 基准速度 (rad/s)
+        
+        new_points = []
+        current_time = 0.0
+        
+        point0 = joint_traj.points[0]
+        point0.time_from_start = Duration(sec=0, nanosec=0)
+        new_points.append(point0)
+
+        for i in range(1, len(joint_traj.points)):
+            prev_p = joint_traj.points[i-1]
+            curr_p = joint_traj.points[i]
+            
+            max_delta = 0.0
+            for j in range(len(curr_p.positions)):
+                delta = abs(curr_p.positions[j] - prev_p.positions[j])
+                max_delta = max(max_delta, delta)
+            
+            dt = max_delta / base_speed
+            dt = max(dt, 0.05) # 最小时间间隔
+
+            current_time += dt
+            
+            sec = int(current_time)
+            nanosec = int((current_time - sec) * 1e9)
+            curr_p.time_from_start = Duration(sec=sec, nanosec=nanosec)
+            curr_p.velocities = []
+            curr_p.accelerations = []
+            curr_p.effort = []
+            new_points.append(curr_p)
+
+        robot_traj.joint_trajectory.points = new_points
+        return robot_traj
+
+    def _execute_trajectory(self, robot_trajectory) -> bool:
+        if not hasattr(self, 'exec_traj_client'):
+            self.exec_traj_client = ActionClient(self.node, ExecuteTrajectory, '/execute_trajectory')
+        
+        if not self.exec_traj_client.wait_for_server(timeout_sec=2.0): return False
+
+        goal = ExecuteTrajectory.Goal()
+        goal.trajectory = robot_trajectory
+        
+        self.logger.info('开始执行轨迹...')
+        future = self.exec_traj_client.send_goal_async(goal)
+        while not future.done(): rclpy.spin_once(self.node, timeout_sec=0.01)
+        goal_handle = future.result()
+        if not goal_handle.accepted: return False
+            
+        res_future = goal_handle.get_result_async()
+        while not res_future.done(): rclpy.spin_once(self.node, timeout_sec=0.01)
+        return res_future.result().result.error_code.val == 1
 
     def move_to_pose_sync(
-        self,
-        target_pose: Pose,
-        velocity_scaling: float = None,
-        acceleration_scaling: float = None
+        self, 
+        target_pose: Pose, 
+        velocity_scaling=None, 
+        joint_limits: Optional[Dict[str, tuple]] = None
     ) -> bool:
         """
-        同步移动到目标位姿
-
+        PTP 移动，支持关节约束
         Args:
-            target_pose: 目标位姿 (geometry_msgs/Pose)
-            velocity_scaling: 速度缩放因子 [0.0, 1.0]
-            acceleration_scaling: 加速度缩放因子 [0.0, 1.0]
-
-        Returns:
-            是否成功
+            joint_limits: 字典 {'joint_name': (min_angle, max_angle)}
         """
-        if velocity_scaling is None:
-            velocity_scaling = self.velocity_scaling
-        if acceleration_scaling is None:
-            acceleration_scaling = self.acceleration_scaling
+        if velocity_scaling is None: velocity_scaling = self.velocity_scaling
 
-        # 构建 MoveGroup Goal
         goal = MoveGroup.Goal()
         goal.request = self._create_motion_plan_request(
-            target_pose,
-            velocity_scaling,
-            acceleration_scaling
+            target_pose, velocity_scaling, self.acceleration_scaling, joint_limits
         )
         goal.planning_options.plan_only = False
-        goal.planning_options.look_around = False
         goal.planning_options.replan = True
-        goal.planning_options.replan_attempts = 3
-
-        self.logger.info(
-            f'发送目标位姿: x={target_pose.position.x:.3f}, '
-            f'y={target_pose.position.y:.3f}, z={target_pose.position.z:.3f}'
-        )
-
-        # 发送目标并等待
-        send_goal_future = self.action_client.send_goal_async(goal)
-
-        # 等待目标被接受（使用简单循环，不使用 spin_until_future_complete）
-        timeout = 10.0
-        start_time = time.time()
-        while not send_goal_future.done():
-            if time.time() - start_time > timeout:
-                self.logger.error('发送目标超时')
-                return False
-            time.sleep(0.01)
-
-        goal_handle: ClientGoalHandle = send_goal_future.result()
-        if not goal_handle.accepted:
-            self.logger.error('运动规划目标被拒绝')
-            return False
-
-        self.logger.info('目标已接受，等待规划和执行...')
-
-        # 等待执行完成（使用简单循环）
-        result_future = goal_handle.get_result_async()
-        timeout = self.planning_time + 30.0  # 规划时间 + 执行时间
-        start_time = time.time()
-        while not result_future.done():
-            if time.time() - start_time > timeout:
-                self.logger.error('运动执行超时')
-                return False
-            time.sleep(0.01)
-
-        result = result_future.result()
-        if result.result.error_code.val == 1:  # SUCCESS
-            self.logger.info('运动执行成功')
-            return True
-        else:
-            self.logger.error(
-                f'运动执行失败，错误码: {result.result.error_code.val}'
-            )
-            return False
+        
+        self.logger.info('规划路径 (Smart PTP)...')
+        future = self.action_client.send_goal_async(goal)
+        while not future.done(): rclpy.spin_once(self.node, timeout_sec=0.01)
+        goal_handle = future.result()
+        if not goal_handle.accepted: return False
+        
+        res_future = goal_handle.get_result_async()
+        while not res_future.done(): rclpy.spin_once(self.node, timeout_sec=0.01)
+        return res_future.result().result.error_code.val == 1
 
     def _create_motion_plan_request(
-        self,
-        target_pose: Pose,
-        velocity_scaling: float,
-        acceleration_scaling: float
-    ) -> MotionPlanRequest:
-        """创建运动规划请求"""
-        request = MotionPlanRequest()
+        self, target_pose, v_scale, a_scale, 
+        joint_limits: Optional[Dict[str, tuple]] = None
+    ):
+        req = MotionPlanRequest()
+        req.group_name = self.planning_group
+        req.max_velocity_scaling_factor = v_scale
+        req.max_acceleration_scaling_factor = a_scale
+        
+        c = Constraints()
+        
+        # 1. 位置约束
+        pc = PositionConstraint()
+        pc.header.frame_id = self.base_frame
+        pc.link_name = self.ee_frame
+        bv = BoundingVolume()
+        sp = SolidPrimitive()
+        sp.type = SolidPrimitive.SPHERE
+        sp.dimensions = [0.001]
+        bv.primitives.append(sp)
+        p = Pose(); p.position = target_pose.position; p.orientation.w=1.0
+        bv.primitive_poses.append(p)
+        pc.constraint_region = bv
+        pc.weight = 1.0
+        c.position_constraints.append(pc)
+        
+        # 2. 姿态约束
+        oc = OrientationConstraint()
+        oc.header.frame_id = self.base_frame
+        oc.link_name = self.ee_frame
+        oc.orientation = target_pose.orientation
+        oc.absolute_x_axis_tolerance = 0.01
+        oc.absolute_y_axis_tolerance = 0.01
+        oc.absolute_z_axis_tolerance = 0.01
+        oc.weight = 1.0
+        c.orientation_constraints.append(oc)
 
-        # 基本设置
-        request.group_name = self.planning_group
-        request.num_planning_attempts = 10
-        request.allowed_planning_time = self.planning_time
-        request.max_velocity_scaling_factor = velocity_scaling
-        request.max_acceleration_scaling_factor = acceleration_scaling
-
-        # 目标约束
-        goal_constraints = Constraints()
-
-        # 位置约束
-        position_constraint = PositionConstraint()
-        position_constraint.header.frame_id = self.base_frame
-        position_constraint.link_name = self.ee_frame
-        position_constraint.target_point_offset.x = 0.0
-        position_constraint.target_point_offset.y = 0.0
-        position_constraint.target_point_offset.z = 0.0
-
-        # 约束区域（小球体）
-        bounding_volume = BoundingVolume()
-        sphere = SolidPrimitive()
-        sphere.type = SolidPrimitive.SPHERE
-        sphere.dimensions = [0.001]  # 1mm 精度
-        bounding_volume.primitives.append(sphere)
-
-        sphere_pose = Pose()
-        sphere_pose.position = target_pose.position
-        sphere_pose.orientation.w = 1.0
-        bounding_volume.primitive_poses.append(sphere_pose)
-
-        position_constraint.constraint_region = bounding_volume
-        position_constraint.weight = 1.0
-        goal_constraints.position_constraints.append(position_constraint)
-
-        # 姿态约束
-        orientation_constraint = OrientationConstraint()
-        orientation_constraint.header.frame_id = self.base_frame
-        orientation_constraint.link_name = self.ee_frame
-        orientation_constraint.orientation = target_pose.orientation
-        orientation_constraint.absolute_x_axis_tolerance = 0.01
-        orientation_constraint.absolute_y_axis_tolerance = 0.01
-        orientation_constraint.absolute_z_axis_tolerance = 0.01
-        orientation_constraint.weight = 1.0
-        goal_constraints.orientation_constraints.append(orientation_constraint)
-
-        request.goal_constraints.append(goal_constraints)
-
-        return request
+        # 3. [新增] 关节约束
+        if joint_limits:
+            for name, (min_val, max_val) in joint_limits.items():
+                jc = JointConstraint()
+                jc.joint_name = name
+                # 目标位置设为区间中点
+                jc.position = (min_val + max_val) / 2.0
+                # 容差设为区间的一半
+                jc.tolerance_above = (max_val - min_val) / 2.0
+                jc.tolerance_below = (max_val - min_val) / 2.0
+                jc.weight = 1.0
+                c.joint_constraints.append(jc)
+        
+        req.goal_constraints.append(c)
+        return req
 
     def is_ready(self) -> bool:
-        """检查 MoveIt2 是否就绪"""
         return self.action_client.server_is_ready()

@@ -1,0 +1,28 @@
+digraph G {
+"world" -> "base_link"[label=" Broadcaster: default_authority\nAverage rate: 10000.0\nBuffer length: 0.0\nMost recent transform: 0.0\nOldest transform: 0.0\n"];
+"base_link" -> "base"[label=" Broadcaster: default_authority\nAverage rate: 10000.0\nBuffer length: 0.0\nMost recent transform: 0.0\nOldest transform: 0.0\n"];
+"base_link" -> "base_link_inertia"[label=" Broadcaster: default_authority\nAverage rate: 10000.0\nBuffer length: 0.0\nMost recent transform: 0.0\nOldest transform: 0.0\n"];
+"flange" -> "tool0"[label=" Broadcaster: default_authority\nAverage rate: 10000.0\nBuffer length: 0.0\nMost recent transform: 0.0\nOldest transform: 0.0\n"];
+"wrist_3_link" -> "flange"[label=" Broadcaster: default_authority\nAverage rate: 10000.0\nBuffer length: 0.0\nMost recent transform: 0.0\nOldest transform: 0.0\n"];
+"wrist_2_link" -> "wrist_3_link"[label=" Broadcaster: default_authority\nAverage rate: 18.031\nBuffer length: 4.936\nMost recent transform: 1769685815.731215\nOldest transform: 1769685810.795216\n"];
+"wrist_3_link" -> "ft_frame"[label=" Broadcaster: default_authority\nAverage rate: 10000.0\nBuffer length: 0.0\nMost recent transform: 0.0\nOldest transform: 0.0\n"];
+"upper_arm_link" -> "forearm_link"[label=" Broadcaster: default_authority\nAverage rate: 18.031\nBuffer length: 4.936\nMost recent transform: 1769685815.731215\nOldest transform: 1769685810.795216\n"];
+"shoulder_link" -> "upper_arm_link"[label=" Broadcaster: default_authority\nAverage rate: 18.031\nBuffer length: 4.936\nMost recent transform: 1769685815.731215\nOldest transform: 1769685810.795216\n"];
+"base_link_inertia" -> "shoulder_link"[label=" Broadcaster: default_authority\nAverage rate: 18.031\nBuffer length: 4.936\nMost recent transform: 1769685815.731215\nOldest transform: 1769685810.795216\n"];
+"forearm_link" -> "wrist_1_link"[label=" Broadcaster: default_authority\nAverage rate: 18.031\nBuffer length: 4.936\nMost recent transform: 1769685815.731215\nOldest transform: 1769685810.795216\n"];
+"wrist_1_link" -> "wrist_2_link"[label=" Broadcaster: default_authority\nAverage rate: 18.031\nBuffer length: 4.936\nMost recent transform: 1769685815.731215\nOldest transform: 1769685810.795216\n"];
+"oak-d-base-frame" -> "oak"[label=" Broadcaster: default_authority\nAverage rate: 10000.0\nBuffer length: 0.0\nMost recent transform: 0.0\nOldest transform: 0.0\n"];
+"oak" -> "oak_imu_frame"[label=" Broadcaster: default_authority\nAverage rate: 10000.0\nBuffer length: 0.0\nMost recent transform: 0.0\nOldest transform: 0.0\n"];
+"oak" -> "oak_left_camera_frame"[label=" Broadcaster: default_authority\nAverage rate: 10000.0\nBuffer length: 0.0\nMost recent transform: 0.0\nOldest transform: 0.0\n"];
+"oak_left_camera_frame" -> "oak_left_camera_optical_frame"[label=" Broadcaster: default_authority\nAverage rate: 10000.0\nBuffer length: 0.0\nMost recent transform: 0.0\nOldest transform: 0.0\n"];
+"oak" -> "oak_model_origin"[label=" Broadcaster: default_authority\nAverage rate: 10000.0\nBuffer length: 0.0\nMost recent transform: 0.0\nOldest transform: 0.0\n"];
+"oak" -> "oak_rgb_camera_frame"[label=" Broadcaster: default_authority\nAverage rate: 10000.0\nBuffer length: 0.0\nMost recent transform: 0.0\nOldest transform: 0.0\n"];
+"tool0" -> "oak_rgb_camera_optical_frame"[label=" Broadcaster: default_authority\nAverage rate: 10000.0\nBuffer length: 0.0\nMost recent transform: 0.0\nOldest transform: 0.0\n"];
+"oak" -> "oak_right_camera_frame"[label=" Broadcaster: default_authority\nAverage rate: 10000.0\nBuffer length: 0.0\nMost recent transform: 0.0\nOldest transform: 0.0\n"];
+"oak_right_camera_frame" -> "oak_right_camera_optical_frame"[label=" Broadcaster: default_authority\nAverage rate: 10000.0\nBuffer length: 0.0\nMost recent transform: 0.0\nOldest transform: 0.0\n"];
+"base" -> "tool0_controller"[label=" Broadcaster: default_authority\nAverage rate: 125.298\nBuffer length: 3.36\nMost recent transform: 1769685815.763234\nOldest transform: 1769685812.40325\n"];
+edge [style=invis];
+ subgraph cluster_legend { style=bold; color=black; label ="view_frames Result";
+"Recorded at time: 1769685815.7764528"[ shape=plaintext ] ;
+}->"oak-d-base-frame";
+}
