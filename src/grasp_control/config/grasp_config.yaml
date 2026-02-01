@@ -17,6 +17,14 @@ frames:
   robot_effector: "tool0"
   camera: "oak_rgb_camera_optical_frame"
 
+handeye:
+  # 平移 (单位: 米)
+  xyz: [-0.104859, -0.001462, 0.005267]
+  
+  # 旋转 (四元数: x, y, z, w)
+  # 相比 RPY，四元数能更精确地描述旋转，避免万向锁
+  rotation_quaternion: [0.003839, 0.002762, -0.710113, 0.704072]
+
 # ---------- YOLO 检测 ----------
 detection:
   centers_topic: "/centers"
@@ -39,19 +47,19 @@ arm:
 hand:
   service: "/qbsofthand_control_node/set_closure"
   open_closure: 0.3         # 张开
-  close_closure: 0.8        # 闭合
+  close_closure: 0.9        # 闭合
   duration: 1.5             # 时间
 
 # ---------- 关键位置（关节角度，弧度） ----------
 positions:
   # Home 位置（拍照点）- 当前位置
   home_joints:
-    - 1.788    # shoulder_pan_joint
-    - -2.172   # shoulder_lift_joint
-    - 1.435    # elbow_joint
-    - -1.528   # wrist_1_joint
-    - -1.721   # wrist_2_joint
-    - 1.773    # wrist_3_joint
+    - 1.850    # shoulder_pan_joint
+    - -2.173   # shoulder_lift_joint
+    - 1.450    # elbow_joint
+    - -1.560   # wrist_1_joint
+    - -1.815   # wrist_2_joint
+    - 1.780    # wrist_3_joint
 
   # 终点位置（递给人类，手心朝上）- 往前延伸
   handover_joints:
@@ -60,24 +68,24 @@ positions:
     - 1.362    # elbow_joint
     - -3.303   # wrist_1_joint
     - -1.763   # wrist_2_joint
-    - -1.723   # wrist_3_joint
+    - 4.5   # wrist_3_joint
 
 
 # ---------- 抓取参数 ----------
 grasp:
-  lift_height: 0.30         # 抬起高度（米）
+  lift_height: 0.20         # 抬起高度（米）
 
   # 末端执行器相对于物体中心的偏移（米）
   tcp_offset:
-    x: -0.01
-    y: 0.13
-    z: 0.04
+    x: 0.00
+    y: 0.14
+    z: 0.045
 
   # 抓取姿态：支持 RPY 或 rx,ry,rz
   orientation:
-    roll: -1.152
-    pitch: 1.285
-    yaw: -2.661
+    roll: -1.010
+    pitch: 1.538
+    yaw: -2.546
 
 # ---------- 安全限制 ----------
 safety:

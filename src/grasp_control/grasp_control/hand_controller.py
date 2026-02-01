@@ -102,6 +102,11 @@ class HandController:
         """张开灵巧手"""
         self.logger.info('张开灵巧手')
         return self.set_closure(self.open_closure)
+    
+    def fully_open_hand(self) -> bool:
+        """完全张开灵巧手（闭合度=0.0）"""
+        self.logger.info('完全张开灵巧手 (0.0)')
+        return self.set_closure(0.0)
 
     def close_hand(self) -> bool:
         """闭合灵巧手（抓取）"""

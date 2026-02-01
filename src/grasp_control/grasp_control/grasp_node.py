@@ -202,6 +202,9 @@ class GraspControlNode(Node):
         # 1. 优先：关节控制 (最稳健)
         if self.home_joints:
             self.get_logger().info('模式: 关节空间运动 (Home Joints)')
+            # 先完全打开夹爪
+            self.hand.fully_open_hand()
+            time.sleep(1.5)  # 等待完全打开
             self.hand.open_hand()
             if self.arm.move_to_joints_sync(self.home_joints):
                 self.get_logger().info('到达 Home 点，等待相机稳定...')
@@ -215,6 +218,9 @@ class GraspControlNode(Node):
         # 2. 备用：Pose 控制 (如果您一定要用)
         elif self.home_pose:
             self.get_logger().warn('模式: 笛卡尔空间运动 (Home Pose)')
+            # 先完全打开夹爪
+            self.hand.fully_open_hand()
+            time.sleep(0.5)  # 等待完全打开
             self.hand.open_hand()
             if self.moveit.move_to_pose_sync(self.home_pose):
                 time.sleep(1.0)
@@ -251,7 +257,7 @@ class GraspControlNode(Node):
             return
 
         self.target_position = point_base.tolist()
-        self.get_logger().info(f'目标基座坐标: {self.target_position}')
+        self.get_logger().info(f'发送目标坐标: {self.target_position}')
         self._transition_to(GraspState.APPROACH)
 
     def _handle_approach(self):
@@ -291,7 +297,7 @@ class GraspControlNode(Node):
         hover_pose = Pose()
         hover_pose.position.x = final_grasp_pose.position.x
         hover_pose.position.y = final_grasp_pose.position.y
-        hover_pose.position.z = final_grasp_pose.position.z + 0.30
+        hover_pose.position.z = final_grasp_pose.position.z + 0.25
         hover_pose.orientation = current_tcp_pose.orientation # 保持姿态不变
 
         self.get_logger().info('步骤1: 高空平移 (带约束)...')
@@ -314,7 +320,7 @@ class GraspControlNode(Node):
         rotate_pose.orientation = final_grasp_pose.orientation
 
         self.get_logger().info('步骤2: 原地调整姿态...')
-        if not self.moveit.move_cartesian_path([rotate_pose], step=0.01, speed_factor=0.1):
+        if not self.moveit.move_cartesian_path([rotate_pose], step=0.01, speed_factor=0.3):
             self.get_logger().error('步骤2 失败')
             self._transition_to(GraspState.ERROR)
             return
@@ -329,7 +335,7 @@ class GraspControlNode(Node):
         pre_grasp_pose.orientation = final_grasp_pose.orientation
 
         self.get_logger().info('步骤3: 垂直下降...')
-        if not self.moveit.move_cartesian_path([pre_grasp_pose], step=0.01, speed_factor=0.1):
+        if not self.moveit.move_cartesian_path([pre_grasp_pose], step=0.01, speed_factor=0.15):
             self._transition_to(GraspState.ERROR)
             return
 
@@ -365,7 +371,7 @@ class GraspControlNode(Node):
         lift_pose.orientation = current_pose.orientation
 
         # 同样使用 speed_factor=0.1
-        if self.moveit.move_cartesian_path([lift_pose], step=0.01, speed_factor=0.1):
+        if self.moveit.move_cartesian_path([lift_pose], step=0.01, speed_factor=0.15):
             self._transition_to(GraspState.HANDOVER)
         else:
             self.get_logger().error('抬起失败')

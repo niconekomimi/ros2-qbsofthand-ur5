@@ -1,4 +1,4 @@
-# UR5 机械臂视觉抓取系统
+# UR5 机械臂视觉3d抓取系统
 
 集成 UR5 机械臂、OAK-D 相机、QB Soft Hand 灵巧手的 ROS2 视觉协同系统。通过手眼标定实现在相机坐标系中识别物体，并转换到机械臂坐标系进行精确抓取。支持基于 YOLO 的物体检测与深度信息获取。
 
@@ -37,7 +37,7 @@
 - ✅ 实时深度信息获取（3D 定位）
 - ✅ 坐标系变换与可视化
 - ✅ **视觉抓取控制**（MoveIt2 集成）
-- ✅ **一个简单的抓取子demo**
+- ✅ **一个简单的抓取demo**
 
 ---
 
@@ -51,7 +51,8 @@ sudo apt install -y \
 	ros-humble-cv-bridge \
 	ros-humble-vision-msgs \
 	ros-humble-image-transport \
-	ros-humble-moveit
+	ros-humble-moveit\
+	scipy
 ```
 
 ### 2. Python 依赖
@@ -97,7 +98,7 @@ ros2 launch ur_robot_driver ur_control.launch.py \
 	launch_rviz:=false \
 	reverse_ip:=192.168.1.10
 
-# 终端 3：手眼标定发布（**必须**）
+# 终端 3：手眼标定发布（如在grasp_contol中的config文件中静态设置好了参数，可以不用启动该节点。注：该节点存在不稳定因素）
 ros2 launch easy_handeye2 publish.launch.py name:=ur5_oak_eyehand
 
 # 终端 4：灵巧手
