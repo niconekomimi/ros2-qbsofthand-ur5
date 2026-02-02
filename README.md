@@ -85,20 +85,31 @@ colcon build --symlink-install
 source install/setup.bash
 ```
 
-### 日常启动（6 个终端）
+### 快速启动
+
+#### 方式一：一键启动（推荐）
+
+```bash
+ros2 launch grasp_control bringup.launch.py
+```
+
+可选参数：
+```bash
+ros2 launch grasp_control bringup.launch.py \
+    robot_ip:=192.168.1.211 \
+    reverse_ip:=192.168.1.10
+```
+
+#### 方式二：分步启动（调试用）
 
 ```bash
 # 终端 1：相机
-ros2 launch depthai_examples rgb_stereo_node.launch.py
+ros2 launch depthai_ros_driver camera.launch.py params_file:=$(ros2 pkg prefix yolo_center_detector)/share/yolo_center_detector/config/extended_disp.yaml
 
 # 终端 2：机械臂
-ros2 launch ur_robot_driver ur_control.launch.py \
-	ur_type:=ur5 \
-	robot_ip:=192.168.1.211 \
-	launch_rviz:=false \
-	reverse_ip:=192.168.1.10
+ros2 launch ur_robot_driver ur_control.launch.py ur_type:=ur5 robot_ip:=192.168.1.211 reverse_ip:=192.168.1.10 launch_rviz:=false
 
-# 终端 3：手眼标定发布（如在grasp_contol中的config文件中静态设置好了参数，可以不用启动该节点。注：该节点存在不稳定因素）
+# 终端 3：手眼标定 TF
 ros2 launch easy_handeye2 publish.launch.py name:=ur5_oak_eyehand
 
 # 终端 4：灵巧手
@@ -107,13 +118,16 @@ ros2 run qbsofthand_control qbsofthand_control_node
 # 终端 5：YOLO 检测
 ros2 launch yolo_center_detector yolo_center.launch.py
 
-# 终端 6：MoveIt2（抓取控制需要）
+# 终端 6：MoveIt2
 ros2 launch ur_moveit_config ur_moveit.launch.py ur_type:=ur5
 
 # 终端 7：抓取控制
 ros2 launch grasp_control grasp_control.launch.py
+```
 
-# 终端 8：触发抓取
+#### 触发抓取
+
+```bash
 ros2 service call /grasp_control_node/trigger std_srvs/srv/Trigger
 ```
 
