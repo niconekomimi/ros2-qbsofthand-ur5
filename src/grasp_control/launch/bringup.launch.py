@@ -8,7 +8,8 @@ from launch.actions import (
     TimerAction,
 )
 from launch.launch_description_sources import PythonLaunchDescriptionSource
-from launch.substitutions import LaunchConfiguration
+from launch.substitutions import LaunchConfiguration, PathJoinSubstitution
+from launch_ros.substitutions import FindPackageShare
 from ament_index_python.packages import get_package_share_directory
 import os
 
@@ -30,13 +31,24 @@ def generate_launch_description():
     # 获取包路径
     grasp_pkg = get_package_share_directory('grasp_control')
     config_file = os.path.join(grasp_pkg, 'config', 'grasp_config.yaml')
+    yolo_params_file = PathJoinSubstitution([
+        FindPackageShare('yolo_center_detector'),
+        'config',
+        'extended_disp.yaml'
+    ])
 
     # 1. 相机
     camera_launch = IncludeLaunchDescription(
         PythonLaunchDescriptionSource([
-            get_package_share_directory('depthai_examples'),
-            '/launch/rgb_stereo_node.launch.py'
-        ])
+            PathJoinSubstitution([
+                FindPackageShare('depthai_ros_driver'),
+                'launch',
+                'camera.launch.py'
+            ])
+        ]),
+        launch_arguments={
+            'params_file': yolo_params_file
+        }.items()
     )
 
     # 2. UR5 机械臂
@@ -50,6 +62,7 @@ def generate_launch_description():
             'robot_ip': robot_ip,
             'reverse_ip': reverse_ip,
             'launch_rviz': 'false',
+            'tf_prefix': '',  # [关键修正] 显式设置为空，防止污染关节名称
         }.items()
     )
 
@@ -90,14 +103,20 @@ def generate_launch_description():
 
     # 6. MoveIt2（延迟 5 秒启动，等待机械臂就绪）
     moveit_launch = TimerAction(
-        period=5.0,
+        period=5.0, # 如果机器启动较慢，可以适当增加到 8.0
         actions=[
             IncludeLaunchDescription(
                 PythonLaunchDescriptionSource([
                     get_package_share_directory('ur_moveit_config'),
                     '/launch/ur_moveit.launch.py'
                 ]),
-                launch_arguments={'ur_type': 'ur5'}.items()
+                launch_arguments={
+                    'ur_type': 'ur5',            # 确保型号正确
+                    'robot_ip': robot_ip,        # [关键] 必须传入 IP 以加载正确的描述/标定
+                    'launch_rviz': 'false',      # [建议] 如果不需要看 MoveIt 界面，设为 false 防止卡顿
+                    'use_fake_hardware': 'false', # 显式声明使用真实硬件
+                    'tf_prefix': '',  # [关键修正] 显式设置为空，防止污染关节名称
+                }.items()
             )
         ]
     )
